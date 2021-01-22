@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+service FileWorker {
+    rpc healthCheck(check_request) returns (file_reply) {}
+    rpc describeFile(describe_request) returns (file_stream) {}
+    rpc createFile(create_request) returns (file_reply) {}
+    rpc modifyFile(modify_request) returns (file_reply) {}
+    rpc copyFile(copy_request) returns (file_reply) {}
+    rpc moveFile(move_request) returns (file_reply) {}
+}
+
+message check_request {
+    bytes file = 1;
+    string name = 2;
+    string f_code = 3;
+}
+
+message create_request {
+    string x_file_path = 1;
+    bytes file_data = 2;
+    string file_name = 3;
+    string x_mount_path = 4;
+    string x_type = 5;
+    bool is_replace = 6;
+    string f_code = 7;
+
+}
+
+message describe_request {
+    string locate_file = 1;
+    string f_code = 2;
+}
+
+message modify_request {
+    string file_path = 1;
+    string file_name = 2;
+    bool is_replace = 3;
+    string f_code = 4;
+}
+
+message copy_request {
+    string original_file_path = 1;
+    string new_file_path = 2;
+    string f_code = 3;
+}
+
+message move_request {
+    string original_file_path = 1;
+    string new_file_path = 2;
+    string f_code = 3;
+}
+
+message file_reply {
+    int32 code = 1;
+    string err = 2;
+    string biz = 3;
+}
+
+message file_stream {
+    int32 code = 1;
+    string err = 2;
+    bytes file = 3;
+}
+// 编译proto 文件
+//python3 -m grpc_tools.protoc -I. --grpc_python_out=. --python_out=. -I./proto/ demo.proto
