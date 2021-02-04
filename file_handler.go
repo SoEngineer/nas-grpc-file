@@ -1,10 +1,11 @@
 package client
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/Gyjnine/nas-grpc-file/common"
 	"github.com/Gyjnine/nas-grpc-file/proto"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,32 +26,32 @@ type FileHandler interface {
 	MoveFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (map[string]interface{}, error)
 }
 
-var UserCli proto.FileWorkerClient
-
 type FileClient struct {
+	UserCli proto.FileWorkerClient
+	address string
+	channel *grpc.ClientConn
 }
 
-func (FileClient) InitConnection(addr string) {
+func (f FileClient) InitConnection(addr string, logger logrus.Logger) {
 	address := *flag.String("host", addr, "")
-	opt := grpc.WithInsecure()
-	conn, err := grpc.Dial(address, opt, grpc.WithDefaultCallOptions(
-		grpc.MaxCallRecvMsgSize(MaxFileSize),
-		grpc.MaxCallSendMsgSize(MaxFileSize)),
+	conn, err := grpc.Dial(address, grpc.WithInsecure(),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(MaxFileSize),
+			grpc.MaxCallSendMsgSize(MaxFileSize)),
 		grpc.WithInitialWindowSize(InitialWindowSize),
 		grpc.WithInitialConnWindowSize(InitialWindowSize),
 		grpc.WithWriteBufferSize(BufferSize),
 		grpc.WithReadBufferSize(BufferSize))
 	if err != nil {
-		fmt.Println("failed to connect : ", err)
+		logger.Error(fmt.Sprintf("failed to connect Error=%v", err))
 	}
 	// 存根
-	UserCli = proto.NewFileWorkerClient(conn)
+	f.UserCli = proto.NewFileWorkerClient(conn)
+	f.address = address
+	f.channel = conn
 }
 
-func (FileClient) DescribeFile(callerCode string, remoteFullPath string, timeout time.Duration) (map[string]interface{}, error) {
-	var code int
-	var message string
-	var fileStream []byte
+func (f FileClient) DescribeFile(callerCode string, remoteFullPath string, timeout time.Duration, logger logrus.Logger) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 	if callerCode == "" || remoteFullPath == "" {
 		result["code"] = 128502
@@ -58,37 +59,29 @@ func (FileClient) DescribeFile(callerCode string, remoteFullPath string, timeout
 		result["fileStream"] = nil
 		return result, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
-	defer cancel()
-	dataInfo, err := UserCli.DescribeFile(ctx, &proto.DescribeRequest{FCode: callerCode, LocateFile: remoteFullPath})
-	if err != nil {
-		errStatus, _ := status.FromError(err)
-		if errStatus.Code() == codes.DeadlineExceeded {
-			code = 128512
-			message = "连接超时"
-			fileStream = nil
-		} else if errStatus.Code() == codes.Unavailable {
-			// 连接暂时不可用 重新尝试
-			dataInfo, err := UserCli.DescribeFile(ctx, &proto.DescribeRequest{FCode: callerCode, LocateFile: remoteFullPath})
-			if err != nil {
-				fmt.Printf("Get connect DescribeFile failed :%v", err)
-				result["code"] = 1
-				result["message"] = "请求失败"
-				result["fileStream"] = nil
-				return result, err
-			}
-			code = int(dataInfo.Code)
-			message = dataInfo.Err
-			fileStream = dataInfo.File
-		} else if errStatus.Code() == codes.InvalidArgument {
-			code = 128501
-			message = "参数异常"
-			fileStream = nil
+	code, message, fileStream, err := common.CallDescribeFile(f.UserCli, callerCode, remoteFullPath, timeout)
+	if code == 1 || code == 128509 || code == 128512 {
+		if f.channel != nil {
+			_ = f.channel.Close()
 		}
-	} else {
-		code = int(dataInfo.Code)
-		message = dataInfo.Err
-		fileStream = dataInfo.File
+		conn, err := grpc.Dial(f.address, grpc.WithInsecure(),
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallRecvMsgSize(MaxFileSize),
+				grpc.MaxCallSendMsgSize(MaxFileSize)),
+			grpc.WithInitialWindowSize(InitialWindowSize),
+			grpc.WithInitialConnWindowSize(InitialWindowSize),
+			grpc.WithWriteBufferSize(BufferSize),
+			grpc.WithReadBufferSize(BufferSize))
+		if err != nil {
+			logger.Errorf(fmt.Sprintf("failed to connect Error=%v", err))
+		}
+		// 存根
+		UserCli := proto.NewFileWorkerClient(conn)
+		code, message, fileStream, err = common.CallDescribeFile(UserCli, callerCode, remoteFullPath, timeout)
+		if err != nil {
+			logger.Errorf(fmt.Sprintf("Get connect DescribeFile failed Error=%v", err))
+		}
+		f.UserCli = UserCli
 	}
 	result["code"] = code
 	result["message"] = message
@@ -96,11 +89,12 @@ func (FileClient) DescribeFile(callerCode string, remoteFullPath string, timeout
 	return result, err
 }
 
-func (FileClient) CreateFile(callerCode string, mountPath string, xType string, fileData []byte, fileName string, filePath string, replace bool, timeout time.Duration) (map[string]interface{}, error) {
+func (f FileClient) CreateFile(callerCode string, mountPath string, xType string, fileData []byte, fileName string, filePath string, replace bool, timeout time.Duration, logger logrus.Logger) (map[string]interface{}, error) {
 	var code int
 	var message string
 	var fileMountPath string
-	dict := make(map[string]string, 1)
+	var err error
+
 	result := make(map[string]interface{})
 	if callerCode == "" || filePath == "" || xType == "" || fileName == "" {
 		result["code"] = 128502
@@ -108,39 +102,30 @@ func (FileClient) CreateFile(callerCode string, mountPath string, xType string, 
 		result["fileMountPath"] = ""
 		return result, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
-	defer cancel()
-	dataInfo, err := UserCli.CreateFile(ctx, &proto.CreateRequest{FCode: callerCode, FileName: fileName, FileData: fileData, IsReplace: replace, XType: xType, XMountPath: mountPath, XFilePath: filePath})
-	if err != nil {
-		errStatus, _ := status.FromError(err)
-		if errStatus.Code() == codes.DeadlineExceeded {
-			code = 128512
-			message = "连接超时"
-			fileMountPath = ""
-		} else if errStatus.Code() == codes.Unavailable {
-			// 连接暂时不可用 重新尝试
-			dataInfo, err := UserCli.CreateFile(ctx, &proto.CreateRequest{FCode: callerCode, FileName: fileName, FileData: fileData, IsReplace: replace, XType: xType, XMountPath: mountPath, XFilePath: filePath})
-			if err != nil {
-				fmt.Printf("Get connect CreateFile failed :%v", err)
-				result["code"] = 1
-				result["message"] = "请求失败"
-				result["fileMountPath"] = ""
-				return result, err
-			}
-			code = int(dataInfo.Code)
-			message = dataInfo.Err
-			_ = json.Unmarshal([]byte(dataInfo.Biz), &dict)
-			fileMountPath = dict["mountPath"]
-		} else if errStatus.Code() == codes.InvalidArgument {
-			code = 128501
-			message = "参数异常"
-			fileMountPath = ""
+	code, message, fileMountPath, err = common.CallCreateFile(f.UserCli, callerCode, fileName, fileData, replace, xType, mountPath, filePath, timeout)
+	// 重新建立连接
+	if code == 1 || code == 128509 || code == 128512 {
+		if f.channel != nil {
+			_ = f.channel.Close()
 		}
-	} else {
-		code = int(dataInfo.Code)
-		message = dataInfo.Err
-		_ = json.Unmarshal([]byte(dataInfo.Biz), &dict)
-		fileMountPath = dict["mountPath"]
+		conn, err := grpc.Dial(f.address, grpc.WithInsecure(),
+			grpc.WithDefaultCallOptions(
+				grpc.MaxCallRecvMsgSize(MaxFileSize),
+				grpc.MaxCallSendMsgSize(MaxFileSize)),
+			grpc.WithInitialWindowSize(InitialWindowSize),
+			grpc.WithInitialConnWindowSize(InitialWindowSize),
+			grpc.WithWriteBufferSize(BufferSize),
+			grpc.WithReadBufferSize(BufferSize))
+		if err != nil {
+			logger.Errorf(fmt.Sprintf("failed to connect Error=%v", err))
+		}
+		// 存根
+		UserCli := proto.NewFileWorkerClient(conn)
+		code, message, fileMountPath, err = common.CallCreateFile(UserCli, callerCode, fileName, fileData, replace, xType, mountPath, filePath, timeout)
+		if err != nil {
+			logger.Errorf(fmt.Sprintf("Get connect CreateFile failed Error=%v", err))
+		}
+		f.UserCli = UserCli
 	}
 	result["code"] = code
 	result["message"] = message
@@ -148,7 +133,7 @@ func (FileClient) CreateFile(callerCode string, mountPath string, xType string, 
 	return result, err
 }
 
-func (FileClient) ModifyFile(filePath string, fileName string, callerCode string, isReplace bool, timeout time.Duration) (map[string]interface{}, error) {
+func (f FileClient) ModifyFile(filePath string, fileName string, callerCode string, isReplace bool, timeout time.Duration, logger logrus.Logger) (map[string]interface{}, error) {
 
 	var code int
 	var message string
@@ -160,7 +145,7 @@ func (FileClient) ModifyFile(filePath string, fileName string, callerCode string
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
 	defer cancel()
-	dataInfo, err := UserCli.ModifyFile(ctx, &proto.ModifyRequest{FilePath: filePath, FileName: fileName, FCode: callerCode, IsReplace: isReplace})
+	dataInfo, err := f.UserCli.ModifyFile(ctx, &proto.ModifyRequest{FilePath: filePath, FileName: fileName, FCode: callerCode, IsReplace: isReplace})
 	if err != nil {
 		errStatus, _ := status.FromError(err)
 		if errStatus.Code() == codes.DeadlineExceeded {
@@ -168,11 +153,11 @@ func (FileClient) ModifyFile(filePath string, fileName string, callerCode string
 			message = "连接超时"
 		} else if errStatus.Code() == codes.Unavailable {
 			// 连接暂时不可用 重新尝试
-			dataInfo, err := UserCli.ModifyFile(ctx, &proto.ModifyRequest{FilePath: filePath, FileName: fileName, FCode: callerCode, IsReplace: isReplace})
+			dataInfo, err = f.UserCli.ModifyFile(ctx, &proto.ModifyRequest{FilePath: filePath, FileName: fileName, FCode: callerCode, IsReplace: isReplace})
 			if err != nil {
-				fmt.Printf("Get connect ModifyFile failed :%v", err)
-				result["code"] = 1
-				result["message"] = "请求失败"
+				logger.Errorf(fmt.Sprintf("Get connect ModifyFile failed :%v", err))
+				result["code"] = 128509
+				result["message"] = "读取超时"
 				return result, err
 			}
 			code = int(dataInfo.Code)
@@ -190,7 +175,7 @@ func (FileClient) ModifyFile(filePath string, fileName string, callerCode string
 	return result, err
 }
 
-func (FileClient) CopyFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (map[string]interface{}, error) {
+func (f FileClient) CopyFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration, logger logrus.Logger) (map[string]interface{}, error) {
 	var code int
 	var message string
 	result := make(map[string]interface{})
@@ -201,7 +186,7 @@ func (FileClient) CopyFile(newFilePath string, originalFilePath string, callerCo
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
 	defer cancel()
-	dataInfo, err := UserCli.CopyFile(ctx, &proto.CopyRequest{NewFilePath: newFilePath, OriginalFilePath: originalFilePath, FCode: callerCode})
+	dataInfo, err := f.UserCli.CopyFile(ctx, &proto.CopyRequest{NewFilePath: newFilePath, OriginalFilePath: originalFilePath, FCode: callerCode})
 	if err != nil {
 		errStatus, _ := status.FromError(err)
 		if errStatus.Code() == codes.DeadlineExceeded {
@@ -209,11 +194,11 @@ func (FileClient) CopyFile(newFilePath string, originalFilePath string, callerCo
 			message = "连接超时"
 		} else if errStatus.Code() == codes.Unavailable {
 			// 连接暂时不可用 重新尝试
-			dataInfo, err := UserCli.CopyFile(ctx, &proto.CopyRequest{NewFilePath: newFilePath, OriginalFilePath: originalFilePath, FCode: callerCode})
+			dataInfo, err = f.UserCli.CopyFile(ctx, &proto.CopyRequest{NewFilePath: newFilePath, OriginalFilePath: originalFilePath, FCode: callerCode})
 			if err != nil {
-				fmt.Printf("Get connect CopyFile failed :%v", err)
-				result["code"] = 1
-				result["message"] = "请求失败"
+				logger.Errorf(fmt.Sprintf("Get connect CopyFile failed :%v", err))
+				result["code"] = 128509
+				result["message"] = "读取超时"
 				return result, err
 			}
 			code = int(dataInfo.Code)
@@ -231,7 +216,7 @@ func (FileClient) CopyFile(newFilePath string, originalFilePath string, callerCo
 	return result, err
 }
 
-func (FileClient) MoveFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (map[string]interface{}, error) {
+func (f FileClient) MoveFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration, logger logrus.Logger) (map[string]interface{}, error) {
 	var code int
 	var message string
 	result := make(map[string]interface{})
@@ -242,7 +227,7 @@ func (FileClient) MoveFile(newFilePath string, originalFilePath string, callerCo
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout*time.Second)
 	defer cancel()
-	dataInfo, err := UserCli.MoveFile(ctx, &proto.MoveRequest{NewFilePath: newFilePath, OriginalFilePath: originalFilePath, FCode: callerCode})
+	dataInfo, err := f.UserCli.MoveFile(ctx, &proto.MoveRequest{NewFilePath: newFilePath, OriginalFilePath: originalFilePath, FCode: callerCode})
 	if err != nil {
 		errStatus, _ := status.FromError(err)
 		if errStatus.Code() == codes.DeadlineExceeded {
@@ -250,11 +235,11 @@ func (FileClient) MoveFile(newFilePath string, originalFilePath string, callerCo
 			message = "连接超时"
 		} else if errStatus.Code() == codes.Unavailable {
 			// 连接暂时不可用 重新尝试
-			dataInfo, err := UserCli.MoveFile(ctx, &proto.MoveRequest{NewFilePath: newFilePath, OriginalFilePath: originalFilePath, FCode: callerCode})
+			dataInfo, err = f.UserCli.MoveFile(ctx, &proto.MoveRequest{NewFilePath: newFilePath, OriginalFilePath: originalFilePath, FCode: callerCode})
 			if err != nil {
-				fmt.Printf("Get connect MoveFile failed :%v", err)
-				result["code"] = 1
-				result["message"] = "请求失败"
+				logger.Errorf(fmt.Sprintf("Get connect MoveFile failed :%v", err))
+				result["code"] = 128509
+				result["message"] = "读取超时"
 				return result, err
 			}
 			code = int(dataInfo.Code)

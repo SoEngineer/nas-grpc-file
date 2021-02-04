@@ -1,7 +1,10 @@
 # nas-grpc-file
 grpc客户端
 
+install
+go get github.com/Gyjnine/nas-grpc-file
 
+# 错误码
 //	0 = "操作成功"
 //	1 = "请求失败"
 //	128501= "参数异常"
@@ -20,20 +23,26 @@ grpc客户端
 //	128514= "权限不足"
 //	128515= "业务场景不存在"
 
-
+# 调用示例
 func main() {
-var client FileHandler = FileClient{}
-client.InitConnection("172.16.20.30:31547")
-describeFile, err := client.DescribeFile("test", "D://test1.jpg", 3)
-fmt.Println(describeFile["code"], err)
-f,_ := os.Open("D:/test.jpg")
-fileData, _:= ioutil.ReadAll(f)
-createFile, err := client.CreateFile("test", "", "m128205", fileData, "test.jpg", "/", true,300)
-fmt.Println(createFile["code"], err)
-modifyFile, err := client.ModifyFile("D://test01.jpg", "go_test.jpg", "test", true, 3)
-fmt.Println(modifyFile["code"], err)
-copyFile, err := client.CopyFile("D://go_test_01.jpg", "D://go_test.jpg", "test", 3)
-fmt.Println(copyFile["code"], err)
-moveFile, err := client.MoveFile("D://grpc_test/go_test.jpg", "D://go_test.jpg", "test", 3)
-fmt.Println(moveFile["code"], err)
+    # 初始化连接
+    var client FileHandler = FileClient{}
+    client.InitConnection("172.16.20.30:31547")
+    # 文件下载
+    describeFile, err := client.DescribeFile("test", "D://test1.jpg", 3)
+    fmt.Println(describeFile["code"], err)
+    # 文件上传
+    f,_ := os.Open("D:/test.jpg")
+    fileData, _:= ioutil.ReadAll(f)
+    createFile, err := client.CreateFile("test", "", "m128205", fileData, "test.jpg", "/", true,300)
+    fmt.Println(createFile["code"], err)
+    # 文件重命名
+    modifyFile, err := client.ModifyFile("D://test01.jpg", "go_test.jpg", "test", true, 3)
+    fmt.Println(modifyFile["code"], err)
+    # 文件复制
+    copyFile, err := client.CopyFile("D://go_test_01.jpg", "D://go_test.jpg", "test", 3)
+    fmt.Println(copyFile["code"], err)
+    # 文件移动
+    moveFile, err := client.MoveFile("D://grpc_test/go_test.jpg", "D://go_test.jpg", "test", 3)
+    fmt.Println(moveFile["code"], err)
 }
