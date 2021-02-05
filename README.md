@@ -24,10 +24,14 @@ go get github.com/Gyjnine/nas-grpc-file
 //	128515= "业务场景不存在"<br>
 
 # 调用示例
+import (
+	"fmt"
+	"github.com/Gyjnine/nas-grpc-file"
+)
 func main() {
 
     // 初始化连接
-    var client FileHandler = FileClient{}
+    var grpcClient client.FileHandler = client.FileClient{}
     client.InitConnection("172.16.20.30:31547")
     // 文件下载
     describeFile, err := client.DescribeFile("test", "D://test1.jpg", 3)
