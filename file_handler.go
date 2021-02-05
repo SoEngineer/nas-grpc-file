@@ -16,14 +16,14 @@ var MaxFileSize = 1024 * 1024 * 256
 var InitialWindowSize = int32(1024 * 1024 * 5)
 var BufferSize = 1024 * 1024 * 5
 
-type FileHandler interface {
-	InitConnection(add string) error
-	DescribeFile(callerCode string, remoteFullPath string, timeout time.Duration) (ret data.RetDescribeFile, err error)
-	CreateFile(callerCode string, mountPath string, xType string, fileData []byte, fileName string, filePath string, replace bool, timeout time.Duration) (ret data.RetCreateFile, err error)
-	ModifyFile(filePath string, fileName string, callerCode string, isReplace bool, timeout time.Duration) (ret data.Ret, err error)
-	CopyFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret data.Ret, err error)
-	MoveFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret data.Ret, err error)
-}
+//type FileHandler interface {
+//	InitConnection(add string) error
+//	DescribeFile(callerCode string, remoteFullPath string, timeout time.Duration) (ret data.RetDescribeFile, err error)
+//	CreateFile(callerCode string, mountPath string, xType string, fileData []byte, fileName string, filePath string, replace bool, timeout time.Duration) (ret data.RetCreateFile, err error)
+//	ModifyFile(filePath string, fileName string, callerCode string, isReplace bool, timeout time.Duration) (ret data.Ret, err error)
+//	CopyFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret data.Ret, err error)
+//	MoveFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret data.Ret, err error)
+//}
 
 type FileClient struct {
 	UserCli proto.FileWorkerClient
