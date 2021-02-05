@@ -22,6 +22,9 @@ go get github.com/Gyjnine/nas-grpc-file
 //	128513= "读取文件失败"<br>
 //	128514= "权限不足"<br>
 //	128515= "业务场景不存在"<br>
+//  128516= "文件复制失败"<br>
+//  128517= "文件改名失败"<br>
+//  128518= "文件移动失败"<br>
 
 # 调用示例
 import (
@@ -31,25 +34,39 @@ import (
 
 func main() {
 
-    // 初始化连接
-    var grpcClient client.FileHandler = client.FileClient{}
-    client.InitConnection("172.16.20.30:31547")
-    // 文件下载
-    describeFile, err := client.DescribeFile("test", "D://test1.jpg", 3)
-    fmt.Println(describeFile["code"], err)
-    //文件上传
-    f,_ := os.Open("D:/test.jpg")
-    fileData, _:= ioutil.ReadAll(f)
-    createFile, err := client.CreateFile("test", "", "m128205", fileData, "test.jpg", "/", true,300)
-    fmt.Println(createFile["code"], err)
-    //文件重命名
-    modifyFile, err := client.ModifyFile("D://test01.jpg", "go_test.jpg", "test", true, 3)
-    fmt.Println(modifyFile["code"], err)
-    // 文件复制
-    copyFile, err := client.CopyFile("D://go_test_01.jpg", "D://go_test.jpg", "test", 3)
-    fmt.Println(copyFile["code"], err)
-    // 文件移动
-    moveFile, err := client.MoveFile("D://grpc_test/go_test.jpg", "D://go_test.jpg", "test", 3)
-    fmt.Println(moveFile["code"], err)
+	grpcClient := client.FileClient{}
+	err := grpcClient.InitConnection("172.16.20.30:31547")
+	describeFile, err := grpcClient.DescribeFile("test", "/picture/CERTIFICATE/test.jpg", 300)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(describeFile.Code, describeFile.Message)
+	file, _ := os.OpenFile("D:/", os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.ModePerm)
+	defer file.Close()
+	w := bufio.NewWriter(file) //创建新的 Writer 对象
+	_, err = w.Write(describeFile.FileStream)
+	_ = w.Flush()
+	f,_ := os.Open("D:/test.jpg")
+	fileData, _:= ioutil.ReadAll(f)
+	createFile, err := grpcClient.CreateFile("test", "111", "m128205", fileData, "test111.jpg", "/", true,300)
+	if err != nil {
+		fmt.Sprintln(err)
+	}
+	fmt.Println(createFile.Code,createFile.Message, createFile.FileMountPath)
+	modifyFile, err := grpcClient.ModifyFile("/picture/CERTIFICATE/test111.jpg", "test1111.jpg", "test", true, 300)
+	if err != nil {
+		fmt.Sprintln(err)
+	}
+	fmt.Println(modifyFile.Code, err)
+	copyFile, err := grpcClient.CopyFile("/picture/CERTIFICATE/test111.jpg", "/picture/CERTIFICATE/test1111.jpg", "test", 300)
+	if err != nil {
+		fmt.Sprintln(err)
+	}
+	fmt.Println(copyFile.Code, err)
+	moveFile, err := grpcClient.MoveFile("/picture/CERTIFICATE/test/test1.jpg", "/picture/CERTIFICATE/test1111.jpg", "test", 300)
+	if err != nil {
+		fmt.Sprintln(err)
+	}
+	fmt.Println(moveFile.Code, err)
     
 }
