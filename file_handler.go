@@ -18,14 +18,20 @@ var BufferSize = 1024 * 1024 * 5
 
 type FileHandler interface {
 	InitConnection(add string) error
-	DescribeFile(callerCode string, remoteFullPath string, timeout time.Duration) (map[string]interface{}, error)
-	CreateFile(callerCode string, mountPath string, xType string, fileData []byte, fileName string, filePath string, replace bool, timeout time.Duration) (map[string]interface{}, error)
-	ModifyFile(filePath string, fileName string, callerCode string, isReplace bool, timeout time.Duration) (ret data.RetRet, err error)
-	CopyFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret Ret, err error)
-	MoveFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret Ret, err error)
+	DescribeFile(callerCode string, remoteFullPath string, timeout time.Duration) (ret data.RetDescribeFile, err error)
+	CreateFile(callerCode string, mountPath string, xType string, fileData []byte, fileName string, filePath string, replace bool, timeout time.Duration) (ret data.RetCreateFile, err error)
+	ModifyFile(filePath string, fileName string, callerCode string, isReplace bool, timeout time.Duration) (ret data.Ret, err error)
+	CopyFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret data.Ret, err error)
+	MoveFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret data.Ret, err error)
 }
 
-func (f *data.FileClient) InitConnection(addr string) error {
+type FileClient struct {
+	UserCli proto.FileWorkerClient
+	address string
+	channel *grpc.ClientConn
+}
+
+func (f *FileClient) InitConnection(addr string) error {
 	address := fmt.Sprintf(addr)
 	conn, err := grpc.Dial(address, grpc.WithInsecure(),
 		grpc.WithDefaultCallOptions(
@@ -45,13 +51,11 @@ func (f *data.FileClient) InitConnection(addr string) error {
 	return nil
 }
 
-func (f *data.FileClient) DescribeFile(callerCode string, remoteFullPath string, timeout time.Duration) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
+func (f *FileClient) DescribeFile(callerCode string, remoteFullPath string, timeout time.Duration) (ret data.RetDescribeFile, err error) {
 	if callerCode == "" || remoteFullPath == "" {
-		result["code"] = 128502
-		result["message"] = "缺少请求必传参数"
-		result["fileStream"] = nil
-		return result, nil
+		ret.Code = 128502
+		ret.Message = "缺少请求必传参数"
+		return ret, nil
 	}
 	code, message, fileStream, err := common.CallDescribeFile(f.UserCli, callerCode, remoteFullPath, timeout)
 	if code == 1 || code == 128509 || code == 128512 {
@@ -67,36 +71,29 @@ func (f *data.FileClient) DescribeFile(callerCode string, remoteFullPath string,
 			grpc.WithWriteBufferSize(BufferSize),
 			grpc.WithReadBufferSize(BufferSize))
 		if err != nil {
-			return result, err
+			return ret, err
 		}
 		// 存根
 		UserCli := proto.NewFileWorkerClient(conn)
 		code, message, fileStream, err = common.CallDescribeFile(UserCli, callerCode, remoteFullPath, timeout)
 		if err != nil {
-			return result, err
+			return ret, err
 		}
 		f.UserCli = UserCli
 	}
-	result["code"] = code
-	result["message"] = message
-	result["fileStream"] = fileStream
-	return result, err
+	ret.Code = code
+	ret.Message = message
+	ret.FileStream = fileStream
+	return ret, err
 }
 
-func (f *data.FileClient) CreateFile(callerCode string, mountPath string, xType string, fileData []byte, fileName string, filePath string, replace bool, timeout time.Duration) (map[string]interface{}, error) {
-	var code int
-	var message string
-	var fileMountPath string
-	var err error
-
-	result := make(map[string]interface{})
+func (f *FileClient) CreateFile(callerCode string, mountPath string, xType string, fileData []byte, fileName string, filePath string, replace bool, timeout time.Duration) (ret data.RetCreateFile, err error) {
 	if callerCode == "" || filePath == "" || xType == "" || fileName == "" {
-		result["code"] = 128502
-		result["message"] = "缺少请求必传参数"
-		result["fileMountPath"] = ""
-		return result, nil
+		ret.Code = 128502
+		ret.Message = "缺少请求必传参数"
+		return ret, nil
 	}
-	code, message, fileMountPath, err = common.CallCreateFile(f.UserCli, callerCode, fileName, fileData, replace, xType, mountPath, filePath, timeout)
+	code, message, fileMountPath, err := common.CallCreateFile(f.UserCli, callerCode, fileName, fileData, replace, xType, mountPath, filePath, timeout)
 	// 重新建立连接
 	if code == 1 || code == 128509 || code == 128512 {
 		if f.channel != nil {
@@ -111,23 +108,23 @@ func (f *data.FileClient) CreateFile(callerCode string, mountPath string, xType 
 			grpc.WithWriteBufferSize(BufferSize),
 			grpc.WithReadBufferSize(BufferSize))
 		if err != nil {
-			return result, err
+			return ret, err
 		}
 		// 存根
 		UserCli := proto.NewFileWorkerClient(conn)
 		code, message, fileMountPath, err = common.CallCreateFile(UserCli, callerCode, fileName, fileData, replace, xType, mountPath, filePath, timeout)
 		if err != nil {
-			return result, err
+			return ret, err
 		}
 		f.UserCli = UserCli
 	}
-	result["code"] = code
-	result["message"] = message
-	result["fileMountPath"] = fileMountPath
-	return result, err
+	ret.Code = code
+	ret.Message = message
+	ret.FileMountPath = fileMountPath
+	return ret, err
 }
 
-func (f *FileClient) ModifyFile(filePath string, fileName string, callerCode string, isReplace bool, timeout time.Duration) (ret Ret, error) {
+func (f *FileClient) ModifyFile(filePath string, fileName string, callerCode string, isReplace bool, timeout time.Duration) (ret data.Ret, err error) {
 	if callerCode == "" || filePath == "" || fileName == "" {
 		ret.Code = 128502
 		ret.Message = "缺少请求必传参数"
@@ -162,7 +159,7 @@ func (f *FileClient) ModifyFile(filePath string, fileName string, callerCode str
 	return ret, err
 }
 
-func (f *FileClient) CopyFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret Ret, err error) {
+func (f *FileClient) CopyFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret data.Ret, err error) {
 	if newFilePath == "" || originalFilePath == "" || callerCode == "" {
 		ret.Code = 128502
 		ret.Message = "缺少请求必传参数"
@@ -197,7 +194,7 @@ func (f *FileClient) CopyFile(newFilePath string, originalFilePath string, calle
 	return ret, err
 }
 
-func (f *FileClient) MoveFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret Ret, err error) {
+func (f *FileClient) MoveFile(newFilePath string, originalFilePath string, callerCode string, timeout time.Duration) (ret data.Ret, err error) {
 	if newFilePath == "" || originalFilePath == "" || callerCode == "" {
 		ret.Code = 128502
 		ret.Message = "缺少请求必传参数"
