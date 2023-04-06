@@ -58,11 +58,11 @@ func (f *FileClient) DescribeFile(callerCode string, remoteFullPath string, time
 		return ret, nil
 	}
 	code, message, fileStream, err := common.CallDescribeFile(f.UserCli, callerCode, remoteFullPath, timeout)
-	if code == 1 || code == 128509 || code == 128512 {
+	if code == 1 || code == 128509 || code == 128512 || err != nil {
 		if f.channel != nil {
 			_ = f.channel.Close()
 		}
-		conn, err := grpc.Dial(f.address, grpc.WithInsecure(),
+		conn, connErr := grpc.Dial(f.address, grpc.WithInsecure(),
 			grpc.WithDefaultCallOptions(
 				grpc.MaxCallRecvMsgSize(MaxFileSize),
 				grpc.MaxCallSendMsgSize(MaxFileSize)),
@@ -70,8 +70,8 @@ func (f *FileClient) DescribeFile(callerCode string, remoteFullPath string, time
 			grpc.WithInitialConnWindowSize(InitialWindowSize),
 			grpc.WithWriteBufferSize(BufferSize),
 			grpc.WithReadBufferSize(BufferSize))
-		if err != nil {
-			return ret, err
+		if connErr != nil {
+			return ret, connErr
 		}
 		// 存根
 		UserCli := proto.NewFileWorkerClient(conn)
