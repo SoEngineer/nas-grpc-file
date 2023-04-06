@@ -1,4 +1,4 @@
-module github.com/Gyjnine/nas-grpc-file
+module github.com/soengineer/nas-grpc-file
 
 go 1.13
 

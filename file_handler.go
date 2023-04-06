@@ -2,9 +2,9 @@ package client
 
 import (
 	"fmt"
-	"github.com/Gyjnine/nas-grpc-file/common"
-	"github.com/Gyjnine/nas-grpc-file/data"
-	"github.com/Gyjnine/nas-grpc-file/proto"
+	"github.com/soengineer/nas-grpc-file/common"
+	"github.com/soengineer/nas-grpc-file/data"
+	"github.com/soengineer/nas-grpc-file/proto"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

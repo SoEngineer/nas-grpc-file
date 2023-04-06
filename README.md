@@ -2,7 +2,7 @@
 grpc客户端
 
 install
-go get github.com/Gyjnine/nas-grpc-file
+go get github.com/soengineer/nas-grpc-file
 
 # 错误码
 //	0 = "操作成功"<br>
@@ -30,7 +30,7 @@ go get github.com/Gyjnine/nas-grpc-file
 # 调用示例
 import (
 	"fmt"
-	"github.com/Gyjnine/nas-grpc-file"
+	"github.com/soengineer/nas-grpc-file"
 )
 
 func main() {
