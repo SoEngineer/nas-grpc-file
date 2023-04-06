@@ -95,11 +95,11 @@ func (f *FileClient) CreateFile(callerCode string, mountPath string, xType strin
 	}
 	code, message, fileMountPath, err := common.CallCreateFile(f.UserCli, callerCode, fileName, fileData, replace, xType, mountPath, filePath, timeout)
 	// 重新建立连接
-	if code == 1 || code == 128509 || code == 128512 {
+	if code == 1 || code == 128509 || code == 128512 || err != nil {
 		if f.channel != nil {
 			_ = f.channel.Close()
 		}
-		conn, err := grpc.Dial(f.address, grpc.WithInsecure(),
+		conn, connErr := grpc.Dial(f.address, grpc.WithInsecure(),
 			grpc.WithDefaultCallOptions(
 				grpc.MaxCallRecvMsgSize(MaxFileSize),
 				grpc.MaxCallSendMsgSize(MaxFileSize)),
@@ -107,8 +107,8 @@ func (f *FileClient) CreateFile(callerCode string, mountPath string, xType strin
 			grpc.WithInitialConnWindowSize(InitialWindowSize),
 			grpc.WithWriteBufferSize(BufferSize),
 			grpc.WithReadBufferSize(BufferSize))
-		if err != nil {
-			return ret, err
+		if connErr != nil {
+			return ret, connErr
 		}
 		// 存根
 		UserCli := proto.NewFileWorkerClient(conn)
